@@ -1,11 +1,8 @@
 import itertools
-try:
-    from collections import OrderedDict
-except ImportError:
-    from ordereddict import OrderedDict
+from collections import OrderedDict
 
-from wtforms.compat import with_metaclass, iteritems, itervalues
-from wtforms.meta import DefaultMeta
+from fastforms.compat import with_metaclass, iteritems, itervalues
+from fastforms.meta import DefaultMeta
 
 __all__ = (
     'BaseForm',
@@ -43,9 +40,6 @@ class BaseForm(object):
 
         translations = self.meta.get_translations(self)
         extra_fields = []
-        if meta.csrf:
-            self._csrf = meta.build_csrf(self)
-            extra_fields.extend(self._csrf.setup_form(self))
 
         for name, unbound_field in itertools.chain(fields, extra_fields):
             options = dict(name=name, prefix=prefix, translations=translations)
@@ -83,7 +77,7 @@ class BaseForm(object):
         for name, field in iteritems(self._fields):
             field.populate_obj(obj, name)
 
-    def process(self, formdata=None, obj=None, data=None, **kwargs):
+    def process(self, formdata=None, obj=None, defaults=None, **kwargs):
         """
         Take form, object data, and keyword arg input and have the fields
         process them.
@@ -95,7 +89,7 @@ class BaseForm(object):
             If `formdata` is empty or not provided, this object is checked for
             attributes matching form field names, which will be used for field
             values.
-        :param data:
+        :param defaults:
             If provided, must be a dictionary of data. This is only used if
             `formdata` is empty or not provided and `obj` does not contain
             an attribute named the same as the field.
@@ -106,10 +100,10 @@ class BaseForm(object):
         """
         formdata = self.meta.wrap_formdata(self, formdata)
 
-        if data is not None:
+        if defaults is not None:
             # XXX we want to eventually process 'data' as a new entity.
             #     Temporarily, this can simply be merged with kwargs.
-            kwargs = dict(data, **kwargs)
+            kwargs = dict(defaults, **kwargs)
 
         for name, field, in iteritems(self._fields):
             if obj is not None and hasattr(obj, name):
@@ -229,7 +223,7 @@ class Form(with_metaclass(FormMeta, BaseForm)):
     """
     Meta = DefaultMeta
 
-    def __init__(self, formdata=None, obj=None, prefix='', data=None, meta=None, **kwargs):
+    def __init__(self, formdata=None, obj=None, prefix='', defaults=None, meta=None, **kwargs):
         """
         :param formdata:
             Used to pass data coming from the enduser, usually `request.POST` or
@@ -243,7 +237,7 @@ class Form(with_metaclass(FormMeta, BaseForm)):
         :param prefix:
             If provided, all fields will have their name prefixed with the
             value.
-        :param data:
+        :param defaults:
             Accept a dictionary of data. This is only used if `formdata` and
             `obj` are not present.
         :param meta:
@@ -263,7 +257,7 @@ class Form(with_metaclass(FormMeta, BaseForm)):
             # Set all the fields to attributes so that they obscure the class
             # attributes with the same names.
             setattr(self, name, field)
-        self.process(formdata, obj, data=data, **kwargs)
+        self.process(formdata, obj, defaults=defaults, **kwargs)
 
     def __setitem__(self, name, value):
         raise TypeError('Fields may not be added to Form instances, only classes.')

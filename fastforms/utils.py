@@ -1,8 +1,7 @@
 from attr import Nothing
-
+from functools import update_wrapper
 
 unset_value = Nothing
-
 
 class WebobInputWrapper(object):
     """
@@ -20,16 +19,27 @@ class WebobInputWrapper(object):
     """
 
     def __init__(self, multidict):
-        self._wrapped = multidict
+        update_wrapper(self, multidict)
+        self.__wrapped__ = multidict
 
     def __iter__(self):
-        return iter(self._wrapped)
+        return iter(self.__wrapped__)
 
     def __len__(self):
-        return len(self._wrapped)
+        return len(self.__wrapped__)
 
     def __contains__(self, name):
-        return (name in self._wrapped)
+        return (name in self.__wrapped__)
 
     def getlist(self, name):
-        return self._wrapped.getall(name)
+        return self.__wrapped__.getall(name)
+
+class DictWrapper(WebobInputWrapper):
+    """
+    Wrap a Dict for use as passing as `formdata` to Field.
+    """
+
+    def getlist(self, name):
+        ret = self.__wrapped__.get(name)
+        assert(isinstance(ret, (list, tuple)))
+        return ret

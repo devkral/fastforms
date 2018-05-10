@@ -40,8 +40,10 @@ class DefaultMeta(object):
         if formdata is not None and not hasattr(formdata, 'getlist'):
             if hasattr(formdata, 'getall'):
                 return WebobInputWrapper(formdata)
+            elif hasattr(formdata, 'get'):
+                return DictWrapper(formdata)
             else:
-                raise TypeError("formdata should be a multidict-type wrapper that supports the 'getlist' method")
+                raise TypeError("formdata should be a multidict-type wrapper that supports the 'getlist' method or a dict which returns a list/tuple")
         return formdata
 
     # -- i18n

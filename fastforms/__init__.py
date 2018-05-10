@@ -8,9 +8,7 @@ development.
 :copyright: Copyright (c) 2010 by Thomas Johansson, James Crasta and others.
 :license: BSD, see LICENSE.txt for details.
 """
-from wtforms import validators
-from wtforms.fields import *
-from wtforms.form import Form
-from wtforms.validators import ValidationError
-
-__version__ = '3.0dev'
+from fastforms import validators
+from fastforms.fields import *
+from fastforms.form import Form
+from fastforms.validators import ValidationError
