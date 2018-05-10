@@ -3,10 +3,10 @@ from __future__ import unicode_literals
 import datetime
 import decimal
 import itertools
+import attr as _attr
 
 from copy import copy
 
-from wtforms import widgets
 from wtforms.compat import text_type, izip
 from wtforms.i18n import DummyTranslations
 from wtforms.validators import StopValidation
@@ -19,7 +19,7 @@ __all__ = (
     'SelectMultipleField', 'StringField', 'TimeField',
 )
 
-
+@_attr.s(init=False)
 class Field(object):
     """
     Field base class
@@ -28,10 +28,7 @@ class Field(object):
     process_errors = tuple()
     raw_data = None
     validators = tuple()
-    widget = None
     _formfield = True
-    _translations = DummyTranslations()
-    do_not_call_in_templates = True  # Allow Django 1.4 traversal
 
     def __new__(cls, *args, **kwargs):
         if '_form' in kwargs and '_name' in kwargs:
@@ -40,8 +37,8 @@ class Field(object):
             return UnboundField(cls, *args, **kwargs)
 
     def __init__(self, label=None, validators=None, filters=tuple(),
-                 description='', id=None, default=None, widget=None,
-                 render_kw=None, _form=None, _name=None, _prefix='',
+                 description='', id=None, default=None,
+                 _form=None, _name=None, _prefix='',
                  _translations=None, _meta=None):
         """
         Construct a new field.
@@ -60,11 +57,6 @@ class Field(object):
         :param default:
             The default value to assign to the field, if no form or object
             input is provided. May be a callable.
-        :param widget:
-            If provided, overrides the widget used to render the field.
-        :param dict render_kw:
-            If provided, a dictionary which provides default keywords that
-            will be given to the widget at render time.
         :param _form:
             The form holding this field. It is passed by the form itself during
             construction. You should never pass this value yourself.
@@ -98,9 +90,8 @@ class Field(object):
 
         self.default = default
         self.description = description
-        self.render_kw = render_kw
         self.filters = filters
-        self.flags = Flags()
+        self.attrs = FieldAttrDict()
         self.name = _prefix + _name
         self.short_name = _name
         self.type = type(self).__name__
@@ -113,9 +104,7 @@ class Field(object):
             self.widget = widget
 
         for v in itertools.chain(self.validators, [self.widget]):
-            flags = getattr(v, 'field_flags', ())
-            for f in flags:
-                setattr(self.flags, f, True)
+            self.attrs.update(field_attrs)
 
     def __unicode__(self):
         """
@@ -137,22 +126,6 @@ class Field(object):
         see the :meth:`__call__` method.
         """
         return self()
-
-    def __call__(self, **kwargs):
-        """
-        Render this field as HTML, using keyword args as additional attributes.
-
-        This delegates rendering to
-        :meth:`meta.render_field <wtforms.meta.DefaultMeta.render_field>`
-        whose default behavior is to call the field's widget, passing any
-        keyword arguments from this call along to the widget.
-
-        In all of the WTForms HTML widgets, keyword arguments are turned to
-        HTML attributes, though in theory a widget is free to do anything it
-        wants with the supplied keyword arguments, and widgets don't have to
-        even do anything related to HTML.
-        """
-        return self.meta.render_field(self, kwargs)
 
     def gettext(self, string):
         """
@@ -320,15 +293,6 @@ class Field(object):
         if valuelist:
             self.data = valuelist[0]
 
-    def populate_obj(self, obj, name):
-        """
-        Populates `obj.<name>` with the field's data.
-
-        :note: This is a destructive operation. If `obj.<name>` already exists,
-               it will be overridden. Use with caution.
-        """
-        setattr(obj, name, self.data)
-
 
 class UnboundField(object):
     _formfield = True
@@ -355,55 +319,51 @@ class UnboundField(object):
     def __repr__(self):
         return '<UnboundField(%s, %r, %r)>' % (self.field_class.__name__, self.args, self.kwargs)
 
-
-class Flags(object):
+class FieldAttrDict(dict):
     """
-    Holds a set of boolean flags as attributes.
+        Holds a set of attributes.
 
     Accessing a non-existing attribute returns False for its value.
     """
-    def __getattr__(self, name):
-        if name.startswith('_'):
-            return super(Flags, self).__getattr__(name)
-        return False
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if any(map(lambda key: not key.isidentifier(), self.keys())):
+            raise ValueError("Invalid key name: %s" % key)
 
-    def __contains__(self, name):
-        return getattr(self, name)
+    def __setitem__(self, key, value):
+        if not key.isidentifier():
+            raise ValueError("Invalid key name: %s" % key)
+        super().__setitem__(key, value)
+
+    def __str__(self):
+        """ return safe html string """
+        return " ".join(map(lambda key,value: '{}="{}"'.format(key, html.escape(value)), self.items()))
+
+    def __html__(self):
+        return self.__str__()
 
     def __repr__(self):
-        flags = (name for name in dir(self) if not name.startswith('_'))
-        return '<wtforms.fields.Flags: {%s}>' % ', '.join(flags)
+        flags = (name for name in self)
+        return '<wtforms.fields.FieldAttrDict: {%s}>' % ', '.join(flags)
 
-
+@_attr.s(slots=True)
 class Label(object):
     """
     An HTML form label.
     """
-    def __init__(self, field_id, text):
-        self.field_id = field_id
-        self.text = text
+    field_id = _attr.ib()
+    text = _attr.ib()
+    use_html = related.BooleanField(default=False)
 
     def __str__(self):
-        return self()
-
-    def __unicode__(self):
-        return self()
+        """ Basis definition, use your template system to customize (see examples) """
+        text = self.text
+        if not self.use_html:
+            text = html.escape(self.text, quote=False)
+        return """<label for="{field_id}">{text}</label>""".format(field_id=self.field_id, text=text)
 
     def __html__(self):
-        return self()
-
-    def __call__(self, text=None, **kwargs):
-        if 'for_' in kwargs:
-            kwargs['for'] = kwargs.pop('for_')
-        else:
-            kwargs.setdefault('for', self.field_id)
-
-        attributes = widgets.html_params(**kwargs)
-        return widgets.HTMLString('<label %s>%s</label>' % (attributes, text or self.text))
-
-    def __repr__(self):
-        return 'Label(%r, %r)' % (self.field_id, self.text)
-
+        return self.__str__()
 
 class SelectFieldBase(Field):
     option_widget = widgets.Option()
@@ -481,7 +441,6 @@ class SelectMultipleField(SelectField):
     validate) multiple choices.  You'll need to specify the HTML `size`
     attribute to the select field when rendering.
     """
-    widget = widgets.Select(multiple=True)
 
     def iter_choices(self):
         for value, label in self.choices:
@@ -507,24 +466,11 @@ class SelectMultipleField(SelectField):
                 if d not in values:
                     raise ValueError(self.gettext("'%(value)s' is not a valid choice for this field") % dict(value=d))
 
-
-class RadioField(SelectField):
-    """
-    Like a SelectField, except displays a list of radio buttons.
-
-    Iterating the field will produce subfields (each containing a label as
-    well) in order to allow custom rendering of the individual radio fields.
-    """
-    widget = widgets.ListWidget(prefix_label=False)
-    option_widget = widgets.RadioInput()
-
-
 class StringField(Field):
     """
     This field is the base for most of the more complicated fields, and
     represents an ``<input type="text">``.
     """
-    widget = widgets.TextInput()
 
     def process_formdata(self, valuelist):
         if valuelist:
@@ -569,7 +515,6 @@ class IntegerField(Field):
     A text field, except all input is coerced to an integer.  Erroneous input
     is ignored and will not be accepted as a value.
     """
-    widget = widgets.TextInput()
 
     def __init__(self, label=None, validators=None, **kwargs):
         super(IntegerField, self).__init__(label, validators, **kwargs)
@@ -609,7 +554,6 @@ class DecimalField(LocaleAwareNumberField):
         Optional number format for locale. If omitted, use the default decimal
         format for the locale.
     """
-    widget = widgets.TextInput()
 
     def __init__(self, label=None, validators=None, places=unset_value, rounding=None, **kwargs):
         super(DecimalField, self).__init__(label, validators, **kwargs)
@@ -662,7 +606,6 @@ class FloatField(Field):
     A text field, except all input is coerced to an float.  Erroneous input
     is ignored and will not be accepted as a value.
     """
-    widget = widgets.TextInput()
 
     def __init__(self, label=None, validators=None, **kwargs):
         super(FloatField, self).__init__(label, validators, **kwargs)
@@ -695,7 +638,6 @@ class BooleanField(Field):
         string of what is considered a "false" value. Defaults to the tuple
         ``('false', '')``
     """
-    widget = widgets.CheckboxInput()
     false_values = (False, 'false', '')
 
     def __init__(self, label=None, validators=None, false_values=None, **kwargs):
@@ -723,7 +665,6 @@ class DateTimeField(Field):
     """
     A text field which stores a `datetime.datetime` matching a format.
     """
-    widget = widgets.TextInput()
 
     def __init__(self, label=None, validators=None, format='%Y-%m-%d %H:%M:%S', **kwargs):
         super(DateTimeField, self).__init__(label, validators, **kwargs)
@@ -789,7 +730,6 @@ class FormField(Field):
         A string which will be suffixed to this field's name to create the
         prefix to enclosed fields. The default is fine for most uses.
     """
-    widget = widgets.TableWidget()
 
     def __init__(self, form_class, label=None, validators=None, separator='-', **kwargs):
         super(FormField, self).__init__(label, validators, **kwargs)
@@ -868,7 +808,6 @@ class FieldList(Field):
         accept no more than this many entries as input, even if more exist in
         formdata.
     """
-    widget = widgets.ListWidget()
 
     def __init__(self, unbound_field, label=None, validators=None, min_entries=0,
                  max_entries=None, default=tuple(), **kwargs):
