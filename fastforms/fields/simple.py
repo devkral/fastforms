@@ -12,7 +12,9 @@ class TextAreaField(StringField):
     This field represents an HTML ``<textarea>`` and can be used to take
     multi-line input.
     """
-    widget = widgets.TextArea()
+    def __str__(self):
+        """ Just an example, use templates in real code and check for TextAreaField """
+        return "<textarea {attrs}></textarea>".format(element=self.element, attrs=self.attrs)
 
 
 class PasswordField(StringField):
@@ -22,7 +24,7 @@ class PasswordField(StringField):
     Also, whatever value is accepted by this field is not rendered back
     to the browser like normal fields.
     """
-    widget = widgets.PasswordInput()
+    input_type = 'password'
 
 
 class FileField(Field):
@@ -34,7 +36,7 @@ class FileField(Field):
     with an object representing the uploaded data.
     """
 
-    widget = widgets.FileInput()
+    input_type = 'file'
 
     def _value(self):
         # browser ignores value of file input for security
@@ -44,7 +46,8 @@ class FileField(Field):
 class MultipleFileField(FileField):
     """A :class:`FileField` that allows choosing multiple files."""
 
-    widget = widgets.FileInput(multiple=True)
+    input_type = 'file'
+    field_attrs = {"multiple": "multiple"}
 
     def process_formdata(self, valuelist):
         self.data = valuelist
@@ -56,7 +59,9 @@ class HiddenField(StringField):
 
     It will render as an ``<input type="hidden">`` but otherwise coerce to a string.
     """
-    widget = widgets.HiddenInput()
+    input_type = 'hidden
+    # for having hidden flag
+    field_attrs = {"hidden": "hidden"}
 
 
 class SubmitField(BooleanField):

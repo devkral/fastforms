@@ -7,10 +7,10 @@ import attr as _attr
 
 from copy import copy
 
-from wtforms.compat import text_type, izip
-from wtforms.i18n import DummyTranslations
-from wtforms.validators import StopValidation
-from wtforms.utils import unset_value
+from fastforms.compat import text_type, izip
+from fastforms.i18n import DummyTranslations
+from fastforms.validators import StopValidation
+from fastforms.utils import unset_value
 
 
 __all__ = (
@@ -19,15 +19,138 @@ __all__ = (
     'SelectMultipleField', 'StringField', 'TimeField',
 )
 
+
+class HtmlAttrDict(dict):
+    """
+        Holds a set of attributes.
+
+    Accessing a non-existing attribute returns False for its value.
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if any(map(lambda key: not key.isidentifier(), self.keys())):
+            raise ValueError("Invalid key name: %s" % key)
+
+    def __setitem__(self, key, value):
+        if not key.isidentifier():
+            raise ValueError("Invalid key name: %s" % key)
+        if isinstance(value, bool) and not value:
+            self.pop(key)
+        else:
+            super().__setitem__(key, value)
+
+    @staticmethod
+    def format_attr(key, value):
+        if isinstance(value, bool):
+            if value:
+                return '{}="{}"'.format(key, key)
+            else:
+                return ''
+        else:
+            return '{}="{}"'.format(key, html.escape(value))
+
+    def __str__(self):
+        """ return safe html string """
+        return " ".join(map(self.format_attr, self.items()))
+
+    def __html__(self):
+        return self.__str__()
+
+    def __repr__(self):
+        flags = (name for name in self)
+        return '<wtforms.fields.HtmlAttrDict: {%s}>' % ', '.join(flags)
+
+@_attr.s(slots=True)
+class Label(object):
+    """
+    An HTML form label.
+    """
+    field_id = _attr.ib()
+    text = _attr.ib(default="")
+    use_html = _attr.ib(default=False)
+
+    def __attrs_post_init__(self):
+        if not self.use_html:
+            self.text = html.escape(self.text, quote=False)
+
+    def __str__(self):
+        """ Basis definition, use your template system to customize (see examples) """
+        return """<label for="{field_id}">{text}</label>""".format(field_id=self.field_id, text=self.text)
+
+    def __html__(self):
+        return self.__str__()
+
+@_attr.s(slots=True)
+class Description(object):
+    text = _attr.ib()
+    use_html = _attr.ib(default=False)
+
+    def __attrs_post_init__(self):
+        if not self.use_html:
+            self.text = html.escape(self.text, quote=False)
+
+    def __str__(self):
+        """ Basis definition, use your template system to customize (see examples) """
+        return self.text
+
+    def __html__(self):
+        return self.__str__()
+
+
 @_attr.s(init=False)
 class Field(object):
     """
     Field base class
+
+    :param label:
+        The label of the field.
+    :param validators:
+        A sequence of validators to call when `validate` is called.
+    :param filters:
+        A sequence of filters which are run on input data by `process`.
+    :param description:
+        A description for the field, typically used for help text.
+    :param id:
+        An id to use for the field. A reasonable default is set by the form,
+        and you shouldn't need to set this manually.
+    :param default:
+        The default value to assign to the field, if no form or object
+        input is provided. May be a callable.
+    :param _form:
+        The form holding this field. It is passed by the form itself during
+        construction. You should never pass this value yourself.
+    :param _name:
+        The name of this field, passed by the enclosing form during its
+        construction. You should never pass this value yourself.
+    :param _prefix:
+        The prefix to prepend to the form name of this field, passed by
+        the enclosing form during construction.
+    :param _translations:
+        A translations object providing message translations. Usually
+        passed by the enclosing form during construction. See
+        :doc:`I18n docs <i18n>` for information on message translations.
+    :param _meta:
+        If provided, this is the 'meta' instance from the form. You usually
+        don't pass this yourself.
+
+    If `_form` and `_name` isn't provided, an :class:`UnboundField` will be
+    returned instead. Call its :func:`bind` method with a form instance and
+    a name to construct the field.
     """
-    errors = tuple()
-    process_errors = tuple()
-    raw_data = None
-    validators = tuple()
+
+    errors = _attr.ib(factory=list, init=False)
+    process_errors = _attr.ib(factory=list, init=False)
+    raw_data = _attr.ib(default='', init=False)
+    validators = _attr.ib(factory=list)
+    label = _attr.ib(init=False)
+    filters = _attr.ib(factory=list)
+    description = _attr.ib(default="")
+    id = _attr.ib()
+    default = _attr.ib(default="")
+    html_attrs = _attr.ib(factory=HtmlAttrDict)
+    field_attrs = {}
+    input_type = None
+
     _formfield = True
 
     def __new__(cls, *args, **kwargs):
@@ -36,48 +159,11 @@ class Field(object):
         else:
             return UnboundField(cls, *args, **kwargs)
 
-    def __init__(self, label=None, validators=None, filters=tuple(),
-                 description='', id=None, default=None,
+    def __init__(self, label=None, validators=None, filters=None,
+                 description='', id=None, default=None, attrs=None,
+                 label_use_html=False, description_use_html=False,*
                  _form=None, _name=None, _prefix='',
                  _translations=None, _meta=None):
-        """
-        Construct a new field.
-
-        :param label:
-            The label of the field.
-        :param validators:
-            A sequence of validators to call when `validate` is called.
-        :param filters:
-            A sequence of filters which are run on input data by `process`.
-        :param description:
-            A description for the field, typically used for help text.
-        :param id:
-            An id to use for the field. A reasonable default is set by the form,
-            and you shouldn't need to set this manually.
-        :param default:
-            The default value to assign to the field, if no form or object
-            input is provided. May be a callable.
-        :param _form:
-            The form holding this field. It is passed by the form itself during
-            construction. You should never pass this value yourself.
-        :param _name:
-            The name of this field, passed by the enclosing form during its
-            construction. You should never pass this value yourself.
-        :param _prefix:
-            The prefix to prepend to the form name of this field, passed by
-            the enclosing form during construction.
-        :param _translations:
-            A translations object providing message translations. Usually
-            passed by the enclosing form during construction. See
-            :doc:`I18n docs <i18n>` for information on message translations.
-        :param _meta:
-            If provided, this is the 'meta' instance from the form. You usually
-            don't pass this yourself.
-
-        If `_form` and `_name` isn't provided, an :class:`UnboundField` will be
-        returned instead. Call its :func:`bind` method with a form instance and
-        a name to construct the field.
-        """
         if _translations is not None:
             self._translations = _translations
 
@@ -89,36 +175,36 @@ class Field(object):
             raise TypeError("Must provide one of _form or _meta")
 
         self.default = default
-        self.description = description
+        self.description = Description(text=description, use_html=description_use_html)
         self.filters = filters
-        self.attrs = FieldAttrDict()
+        if self.input_type:
+            self.html_attrs["type"] = self.input_type
         self.name = _prefix + _name
         self.short_name = _name
         self.type = type(self).__name__
         self.validators = validators or list(self.validators)
 
         self.id = id or self.name
-        self.label = Label(self.id, label if label is not None else self.gettext(_name.replace('_', ' ').title()))
+        if label is None:
+            label = self.gettext(_name.replace('_', ' ').title())
+        self.label = Label(field_id=self.id, text=label, use_html=label_use_html)
 
-        if widget is not None:
-            self.widget = widget
+        self.html_attrs.update(self.field_attrs)
+        if attrs:
+            self.html_attrs.update(attrs)
 
-        for v in itertools.chain(self.validators, [self.widget]):
-            self.attrs.update(field_attrs)
+    def __str__(self):
+        """
+        Returns a basis HTML representation of the field. for more powerful rendering use templates
+        """
+        return "<input {attrs}></input>".format(attrs=self.html_attrs)
 
     def __unicode__(self):
         """
         Returns a HTML representation of the field. For more powerful rendering,
         see the `__call__` method.
         """
-        return self()
-
-    def __str__(self):
-        """
-        Returns a HTML representation of the field. For more powerful rendering,
-        see the `__call__` method.
-        """
-        return self()
+        return self.__str__()
 
     def __html__(self):
         """
@@ -319,94 +405,44 @@ class UnboundField(object):
     def __repr__(self):
         return '<UnboundField(%s, %r, %r)>' % (self.field_class.__name__, self.args, self.kwargs)
 
-class FieldAttrDict(dict):
-    """
-        Holds a set of attributes.
 
-    Accessing a non-existing attribute returns False for its value.
-    """
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        if any(map(lambda key: not key.isidentifier(), self.keys())):
-            raise ValueError("Invalid key name: %s" % key)
+@_attr.s(init=False)
+class Option(object):
+    label = _attr.ib()
+    html_attrs = _attr.ib()
 
-    def __setitem__(self, key, value):
-        if not key.isidentifier():
-            raise ValueError("Invalid key name: %s" % key)
-        super().__setitem__(key, value)
+    def __init__(self, label, **kwargs):
+        self.label = label
+        self.html_attrs = HtmlAttrDict(kwargs)
 
     def __str__(self):
-        """ return safe html string """
-        return " ".join(map(lambda key,value: '{}="{}"'.format(key, html.escape(value)), self.items()))
+        """
+        Returns a basis HTML representation of the field. for more powerful rendering use templates
+        """
+        return "<option {attrs}>{label}</option>".format(attrs=self.html_attrs, label=self.label)
 
-    def __html__(self):
+    def __unicode__(self):
+        """
+        Returns a HTML representation of the field. For more powerful rendering,
+        see the `__call__` method.
+        """
         return self.__str__()
 
-    def __repr__(self):
-        flags = (name for name in self)
-        return '<wtforms.fields.FieldAttrDict: {%s}>' % ', '.join(flags)
-
-@_attr.s(slots=True)
-class Label(object):
-    """
-    An HTML form label.
-    """
-    field_id = _attr.ib()
-    text = _attr.ib()
-    use_html = related.BooleanField(default=False)
-
-    def __str__(self):
-        """ Basis definition, use your template system to customize (see examples) """
-        text = self.text
-        if not self.use_html:
-            text = html.escape(self.text, quote=False)
-        return """<label for="{field_id}">{text}</label>""".format(field_id=self.field_id, text=text)
-
     def __html__(self):
-        return self.__str__()
+        """
+        Returns a HTML representation of the field. For more powerful rendering,
+        see the :meth:`__call__` method.
+        """
+        return self()
 
-class SelectFieldBase(Field):
-    option_widget = widgets.Option()
+class SelectField(Field):
 
     """
-    Base class for fields which can be iterated to produce options.
-
-    This isn't a field, but an abstract base class for fields which want to
-    provide this functionality.
+    Fields which can be iterated to produce options.
     """
-    def __init__(self, label=None, validators=None, option_widget=None, **kwargs):
-        super(SelectFieldBase, self).__init__(label, validators, **kwargs)
 
-        if option_widget is not None:
-            self.option_widget = option_widget
-
-    def iter_choices(self):
-        """
-        Provides data for choice widget rendering. Must return a sequence or
-        iterable of (value, label, selected) tuples.
-        """
-        raise NotImplementedError()
-
-    def __iter__(self):
-        opts = dict(widget=self.option_widget, _name=self.name, _form=None, _meta=self.meta)
-        for i, (value, label, checked) in enumerate(self.iter_choices()):
-            opt = self._Option(label=label, id='%s-%d' % (self.id, i), **opts)
-            opt.process(None, value)
-            opt.checked = checked
-            yield opt
-
-    class _Option(Field):
-        checked = False
-
-        def _value(self):
-            return text_type(self.data)
-
-
-class SelectField(SelectFieldBase):
-    widget = widgets.Select()
-
-    def __init__(self, label=None, validators=None, coerce=text_type, choices=None, **kwargs):
-        super(SelectField, self).__init__(label, validators, **kwargs)
+    def __init__(self, *args, coerce=text_type, choices=None, **kwargs):
+        super(SelectFieldBase, self).__init__(*args, **kwargs)
         self.coerce = coerce
         self.choices = copy(choices)
 
@@ -434,6 +470,14 @@ class SelectField(SelectFieldBase):
         else:
             raise ValueError(self.gettext('Not a valid choice'))
 
+    def __str__(self):
+        return "<select {attrs}>{choices}</select>".format(attrs=self.html_attrs, self.iter_choices())
+
+    def __iter__(self):
+        opts = dict(_name=self.name, _form=None, _meta=self.meta)
+        for i, (value, label, checked) in enumerate(self.iter_choices()):
+            opt = Option(checked=checked, label=label, id='%s-%d' % (self.id, i))
+            yield opt
 
 class SelectMultipleField(SelectField):
     """
@@ -441,17 +485,7 @@ class SelectMultipleField(SelectField):
     validate) multiple choices.  You'll need to specify the HTML `size`
     attribute to the select field when rendering.
     """
-
-    def iter_choices(self):
-        for value, label in self.choices:
-            selected = self.data is not None and self.coerce(value) in self.data
-            yield (value, label, selected)
-
-    def process_data(self, value):
-        try:
-            self.data = list(self.coerce(v) for v in value)
-        except (ValueError, TypeError):
-            self.data = None
+    field_attrs = {"multiple": "multiple"}
 
     def process_formdata(self, valuelist):
         try:
@@ -466,11 +500,33 @@ class SelectMultipleField(SelectField):
                 if d not in values:
                     raise ValueError(self.gettext("'%(value)s' is not a valid choice for this field") % dict(value=d))
 
+
+class RadioField(SelectFieldBase):
+    """
+    Like a SelectField, except displays a list of radio buttons.
+
+    Iterating the field will produce subfields (each containing a label as
+    well) in order to allow custom rendering of the individual radio fields.
+    """
+    input_type = "radio"
+
+    def format_choice(self, choice):
+        attrs = self.html_attrs.copy()
+        attrs.update(choice.html_attrs)
+        return "<input {attrs}>{label}</input>".format(attrs=attrs, label=choice.label)
+
+    def __str__(self):
+        """ example render """
+        return "".join(map(lambda x: self.format_choice(x), self.iter_choices()))
+
+
 class StringField(Field):
     """
     This field is the base for most of the more complicated fields, and
     represents an ``<input type="text">``.
     """
+
+    input_type = "text"
 
     def process_formdata(self, valuelist):
         if valuelist:
@@ -488,6 +544,7 @@ class LocaleAwareNumberField(Field):
 
     Locale-aware numbers require the 'babel' package to be present.
     """
+
     def __init__(self, label=None, validators=None, use_locale=False, number_format=None, **kwargs):
         super(LocaleAwareNumberField, self).__init__(label, validators, **kwargs)
         self.use_locale = use_locale
@@ -515,6 +572,8 @@ class IntegerField(Field):
     A text field, except all input is coerced to an integer.  Erroneous input
     is ignored and will not be accepted as a value.
     """
+
+    input_type = "text"
 
     def __init__(self, label=None, validators=None, **kwargs):
         super(IntegerField, self).__init__(label, validators, **kwargs)
@@ -554,6 +613,8 @@ class DecimalField(LocaleAwareNumberField):
         Optional number format for locale. If omitted, use the default decimal
         format for the locale.
     """
+
+    input_type = "text"
 
     def __init__(self, label=None, validators=None, places=unset_value, rounding=None, **kwargs):
         super(DecimalField, self).__init__(label, validators, **kwargs)
@@ -606,6 +667,7 @@ class FloatField(Field):
     A text field, except all input is coerced to an float.  Erroneous input
     is ignored and will not be accepted as a value.
     """
+    input_type = "text"
 
     def __init__(self, label=None, validators=None, **kwargs):
         super(FloatField, self).__init__(label, validators, **kwargs)
@@ -639,6 +701,7 @@ class BooleanField(Field):
         ``('false', '')``
     """
     false_values = (False, 'false', '')
+    input_type = "checkbox"
 
     def __init__(self, label=None, validators=None, false_values=None, **kwargs):
         super(BooleanField, self).__init__(label, validators, **kwargs)

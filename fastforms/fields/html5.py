@@ -85,11 +85,12 @@ class IntegerRangeField(core.IntegerField):
     """
     Represents an ``<input type="range">``.
     """
-    widget = widgets.RangeInput(step='1')
+    input_type = 'range'
 
 
 class DecimalRangeField(core.DecimalField):
     """
     Represents an ``<input type="range">``.
     """
-    widget = widgets.RangeInput(step='any')
+    input_type = 'range'
+    field_attrs = {"step": "any"}
