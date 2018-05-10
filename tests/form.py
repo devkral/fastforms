@@ -2,10 +2,10 @@ from __future__ import unicode_literals
 
 from unittest import TestCase
 
-from wtforms.form import BaseForm, Form
-from wtforms.meta import DefaultMeta
-from wtforms.fields import StringField, IntegerField
-from wtforms.validators import ValidationError
+from fastforms.form import BaseForm, Form
+from fastforms.meta import DefaultMeta
+from fastforms.fields import StringField, IntegerField
+from fastforms.validators import ValidationError
 from tests.common import DummyPostData
 
 
@@ -234,7 +234,6 @@ class MetaTest(TestCase):
         meta = form.meta
         self.assertEqual(meta.foo, 9)
         self.assertEqual(meta.bar, 8)
-        self.assertEqual(meta.csrf, False)
         assert isinstance(meta, self.F.Meta)
         assert isinstance(meta, self.G.Meta)
         self.assertEqual(type(meta).__bases__, (

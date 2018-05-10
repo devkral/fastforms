@@ -1,15 +1,8 @@
 from unittest import TestCase
-from wtforms.form import BaseForm
-from wtforms.utils import WebobInputWrapper
-from wtforms.utils import unset_value
-from wtforms.fields import Field
-
-try:
-    from webob.multidict import MultiDict
-    has_webob = True
-except ImportError:
-    has_webob = False
-
+from fastforms.form import BaseForm
+from fastforms.utils import WebobInputWrapper
+from fastforms.utils import unset_value
+from fastforms.fields import Field
 
 class MockMultiDict(object):
     def __init__(self, tuples):
@@ -47,7 +40,7 @@ class SneakyField(Field):
 
 class WebobWrapperTest(TestCase):
     def setUp(self):
-        w_cls = MultiDict if has_webob else MockMultiDict
+        w_cls = MockMultiDict
 
         self.test_values = [('a', 'Apple'), ('b', 'Banana'), ('a', 'Cherry')]
         self.empty_mdict = w_cls([])

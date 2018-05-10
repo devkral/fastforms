@@ -3,7 +3,7 @@ import os
 import sys
 from unittest import defaultTestLoader, TextTestRunner, TestSuite
 
-TESTS = ('form', 'fields', 'validators', 'widgets', 'webob_wrapper', 'csrf', 'i18n')
+TESTS = ('form', 'fields', 'validators', 'webob_wrapper', 'i18n')
 
 OPTIONAL_TESTS = ('locale_babel', )
 

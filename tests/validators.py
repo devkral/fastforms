@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from unittest import TestCase
-from wtforms.compat import text_type
-from wtforms.validators import (
+from fastforms.compat import text_type
+from fastforms.validators import (
     StopValidation, ValidationError, email, equal_to,
     ip_address, length, optional, regexp,
     url, NumberRange, AnyOf, NoneOf, mac_address, UUID,

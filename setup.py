@@ -1,13 +1,24 @@
+#! /usr/bin/env python3
 import sys
 from setuptools import setup
 
-extra = {}
+
+REQUIREMENTS = [
+    'attrs',
+    'Babel'
+]
+
+VERSIONING = {
+    'root': '.',
+    'version_scheme': 'guess-next-dev',
+    'local_scheme': 'dirty-tag',
+}
 
 setup(
     name='fastforms',
     use_scm_version=VERSIONING,
     setup_requires=['setuptools_scm'],
-    install_requires=REQUIREMENTS
+    install_requires=REQUIREMENTS,
     url='',
     license='MIT',
     author='Alexander Kaftan',
@@ -29,7 +40,6 @@ setup(
     packages=[
         'fastforms',
         'fastforms.fields',
-        'fastforms.form',,
     ],
     package_data={
         'fastforms': ['locale/fastforms.pot', 'locale/*/*/*'],

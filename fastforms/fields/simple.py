@@ -1,4 +1,3 @@
-from .. import widgets
 from .core import Field, StringField, BooleanField
 
 __all__ = (
@@ -14,7 +13,9 @@ class TextAreaField(StringField):
     """
     def __str__(self):
         """ Just an example, use templates in real code and check for TextAreaField """
-        return "<textarea {attrs}></textarea>".format(element=self.element, attrs=self.attrs)
+        attrs = self.field_attrs.copy()
+        value = attrs.pop("value")
+        return "<textarea {attrs}>{value}</textarea>".format(value=value, attrs=attrs)
 
 
 class PasswordField(StringField):
@@ -59,7 +60,7 @@ class HiddenField(StringField):
 
     It will render as an ``<input type="hidden">`` but otherwise coerce to a string.
     """
-    input_type = 'hidden
+    input_type = 'hidden'
     # for having hidden flag
     field_attrs = {"hidden": "hidden"}
 
@@ -69,4 +70,4 @@ class SubmitField(BooleanField):
     Represents an ``<input type="submit">``.  This allows checking if a given
     submit button has been pressed.
     """
-    widget = widgets.SubmitInput()
+    input_type = 'submit'

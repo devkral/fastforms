@@ -2,6 +2,7 @@ from __future__ import unicode_literals
 
 import datetime
 import decimal
+import html
 import itertools
 import attr as _attr
 
@@ -16,7 +17,7 @@ from fastforms.utils import unset_value
 __all__ = (
     'BooleanField', 'DecimalField', 'DateField', 'DateTimeField', 'FieldList',
     'FloatField', 'FormField', 'IntegerField', 'RadioField', 'SelectField',
-    'SelectMultipleField', 'StringField', 'TimeField',
+    'SelectMultipleField', 'StringField', 'TimeField', 'Option'
 )
 
 
@@ -35,12 +36,22 @@ class HtmlAttrDict(dict):
         if not key.isidentifier():
             raise ValueError("Invalid key name: %s" % key)
         if isinstance(value, bool) and not value:
-            self.pop(key)
+            try:
+                self.pop(key)
+            except KeyError:
+                pass
         else:
             super().__setitem__(key, value)
 
+    def __getattr__(self, key):
+        return self[key]
+
+    def __setattr__(self, key, value):
+        self[key] = value
+
     @staticmethod
-    def format_attr(key, value):
+    def format_attr(item):
+        key, value = item
         if isinstance(value, bool):
             if value:
                 return '{}="{}"'.format(key, key)
@@ -67,15 +78,14 @@ class Label(object):
     """
     field_id = _attr.ib()
     text = _attr.ib(default="")
-    use_html = _attr.ib(default=False)
+    text_safe = _attr.ib(init=False)
 
     def __attrs_post_init__(self):
-        if not self.use_html:
-            self.text = html.escape(self.text, quote=False)
+        self.text_safe = html.escape(self.text, quote=False)
 
     def __str__(self):
         """ Basis definition, use your template system to customize (see examples) """
-        return """<label for="{field_id}">{text}</label>""".format(field_id=self.field_id, text=self.text)
+        return """<label for="{field_id}">{text}</label>""".format(field_id=self.field_id, text=self.text_safe)
 
     def __html__(self):
         return self.__str__()
@@ -83,21 +93,18 @@ class Label(object):
 @_attr.s(slots=True)
 class Description(object):
     text = _attr.ib()
-    use_html = _attr.ib(default=False)
+    text_safe = _attr.ib(init=False)
 
     def __attrs_post_init__(self):
-        if not self.use_html:
-            self.text = html.escape(self.text, quote=False)
+        self.text_safe = html.escape(self.text, quote=False)
 
     def __str__(self):
         """ Basis definition, use your template system to customize (see examples) """
-        return self.text
+        return self.text_safe
 
     def __html__(self):
         return self.__str__()
 
-
-@_attr.s(init=False)
 class Field(object):
     """
     Field base class
@@ -138,18 +145,19 @@ class Field(object):
     a name to construct the field.
     """
 
-    errors = _attr.ib(factory=list, init=False)
-    process_errors = _attr.ib(factory=list, init=False)
-    raw_data = _attr.ib(default='', init=False)
-    validators = _attr.ib(factory=list)
-    label = _attr.ib(init=False)
-    filters = _attr.ib(factory=list)
-    description = _attr.ib(default="")
-    id = _attr.ib()
-    default = _attr.ib(default="")
-    html_attrs = _attr.ib(factory=HtmlAttrDict)
-    field_attrs = {}
+    errors = tuple()
+    process_errors = tuple()
+    raw_data = None
+    data = None
+    validators = tuple()
+    label = None
+    filters = tuple()
+    description = ""
+    id = ""
+    default = None
+    field_attrs = {} #replaced by HtmlAttrDict
     input_type = None
+    _translations = DummyTranslations()
 
     _formfield = True
 
@@ -159,13 +167,17 @@ class Field(object):
         else:
             return UnboundField(cls, *args, **kwargs)
 
-    def __init__(self, label=None, validators=None, filters=None,
-                 description='', id=None, default=None, attrs=None,
-                 label_use_html=False, description_use_html=False,*
+    def __init__(self, label=None, validators=tuple(), filters=tuple(),
+                 description='', id=None, default=None, field_attrs=None,*,
                  _form=None, _name=None, _prefix='',
                  _translations=None, _meta=None):
         if _translations is not None:
             self._translations = _translations
+
+        self.field_attrs = HtmlAttrDict(self.field_attrs)
+        if field_attrs:
+            self.field_attrs.update(field_attrs)
+
 
         if _meta is not None:
             self.meta = _meta
@@ -175,29 +187,27 @@ class Field(object):
             raise TypeError("Must provide one of _form or _meta")
 
         self.default = default
-        self.description = Description(text=description, use_html=description_use_html)
+        self.description = Description(text=description)
         self.filters = filters
         if self.input_type:
-            self.html_attrs["type"] = self.input_type
-        self.name = _prefix + _name
+            self.field_attrs["type"] = self.input_type
+        self.field_attrs["name"] = _prefix + _name
         self.short_name = _name
         self.type = type(self).__name__
-        self.validators = validators or list(self.validators)
+        self.validators = list(validators) if validators else []
 
-        self.id = id or self.name
+        self.field_attrs["id"] = id or self.field_attrs.name
         if label is None:
             label = self.gettext(_name.replace('_', ' ').title())
-        self.label = Label(field_id=self.id, text=label, use_html=label_use_html)
-
-        self.html_attrs.update(self.field_attrs)
-        if attrs:
-            self.html_attrs.update(attrs)
+        self.label = Label(field_id=self.id, text=label)
 
     def __str__(self):
         """
         Returns a basis HTML representation of the field. for more powerful rendering use templates
         """
-        return "<input {attrs}></input>".format(attrs=self.html_attrs)
+        attrs = self.field_attrs.copy()
+        attrs["value"] = self._value()
+        return "<input {attrs}></input>".format(attrs=attrs)
 
     def __unicode__(self):
         """
@@ -340,8 +350,8 @@ class Field(object):
             self.process_errors.append(e.args[0])
 
         if formdata is not None:
-            if self.name in formdata:
-                self.raw_data = formdata.getlist(self.name)
+            if self.field_attrs.name in formdata:
+                self.raw_data = formdata.getlist(self.field_attrs.name)
             else:
                 self.raw_data = []
 
@@ -409,17 +419,17 @@ class UnboundField(object):
 @_attr.s(init=False)
 class Option(object):
     label = _attr.ib()
-    html_attrs = _attr.ib()
+    field_attrs = _attr.ib()
 
     def __init__(self, label, **kwargs):
         self.label = label
-        self.html_attrs = HtmlAttrDict(kwargs)
+        self.field_attrs = HtmlAttrDict(kwargs)
 
     def __str__(self):
         """
         Returns a basis HTML representation of the field. for more powerful rendering use templates
         """
-        return "<option {attrs}>{label}</option>".format(attrs=self.html_attrs, label=self.label)
+        return "<option {attrs}>{label}</option>".format(attrs=self.field_attrs, label=self.label)
 
     def __unicode__(self):
         """
@@ -442,7 +452,7 @@ class SelectField(Field):
     """
 
     def __init__(self, *args, coerce=text_type, choices=None, **kwargs):
-        super(SelectFieldBase, self).__init__(*args, **kwargs)
+        super(SelectField, self).__init__(*args, **kwargs)
         self.coerce = coerce
         self.choices = copy(choices)
 
@@ -471,7 +481,7 @@ class SelectField(Field):
             raise ValueError(self.gettext('Not a valid choice'))
 
     def __str__(self):
-        return "<select {attrs}>{choices}</select>".format(attrs=self.html_attrs, self.iter_choices())
+        return "<select {attrs}>{choices}</select>".format(attrs=self.field_attrs, choices="".join(iter(self)))
 
     def __iter__(self):
         opts = dict(_name=self.name, _form=None, _meta=self.meta)
@@ -501,7 +511,7 @@ class SelectMultipleField(SelectField):
                     raise ValueError(self.gettext("'%(value)s' is not a valid choice for this field") % dict(value=d))
 
 
-class RadioField(SelectFieldBase):
+class RadioField(SelectField):
     """
     Like a SelectField, except displays a list of radio buttons.
 
@@ -511,13 +521,13 @@ class RadioField(SelectFieldBase):
     input_type = "radio"
 
     def format_choice(self, choice):
-        attrs = self.html_attrs.copy()
-        attrs.update(choice.html_attrs)
+        attrs = self.field_attrs.copy()
+        attrs.update(choice.field_attrs)
         return "<input {attrs}>{label}</input>".format(attrs=attrs, label=choice.label)
 
     def __str__(self):
         """ example render """
-        return "".join(map(lambda x: self.format_choice(x), self.iter_choices()))
+        return "".join(map(lambda x: self.format_choice(x), iter(self)))
 
 
 class StringField(Field):

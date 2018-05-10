@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from wtforms.validators import ValidationError, StopValidation
+from fastforms.validators import ValidationError, StopValidation
 
 
 class DummyTranslations(object):

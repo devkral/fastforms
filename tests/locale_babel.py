@@ -3,9 +3,9 @@ import babel
 
 from decimal import Decimal, ROUND_UP
 from unittest import TestCase
-from wtforms import Form
-from wtforms.fields import DecimalField
-from wtforms.utils import unset_value
+from fastforms import Form
+from fastforms.fields import DecimalField
+from fastforms.utils import unset_value
 from tests.common import DummyPostData
 
 

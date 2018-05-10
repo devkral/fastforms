@@ -1,7 +1,7 @@
-from attr import Nothing
+from attr import NOTHING
 from functools import update_wrapper
 
-unset_value = Nothing
+unset_value = NOTHING
 
 class WebobInputWrapper(object):
     """

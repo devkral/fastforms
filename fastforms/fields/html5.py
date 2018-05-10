@@ -1,7 +1,6 @@
 """
 Fields to support various HTML5 input types.
 """
-from ..widgets import html5 as widgets
 from . import core
 
 __all__ = (
@@ -15,70 +14,72 @@ class SearchField(core.StringField):
     """
     Represents an ``<input type="search">``.
     """
-    widget = widgets.SearchInput()
+    input_type = 'search'
 
 
 class TelField(core.StringField):
     """
     Represents an ``<input type="tel">``.
     """
-    widget = widgets.TelInput()
+    input_type = 'tel'
 
 
 class URLField(core.StringField):
     """
     Represents an ``<input type="url">``.
     """
-    widget = widgets.URLInput()
+    input_type = 'url'
 
 
 class EmailField(core.StringField):
     """
     Represents an ``<input type="email">``.
     """
-    widget = widgets.EmailInput()
+    input_type = 'email'
 
 
 class DateTimeField(core.DateTimeField):
     """
     Represents an ``<input type="datetime">``.
     """
-    widget = widgets.DateTimeInput()
+    input_type = 'datetime'
 
 
 class DateField(core.DateField):
     """
     Represents an ``<input type="date">``.
     """
-    widget = widgets.DateInput()
+    input_type = 'date'
 
 
 class TimeField(core.TimeField):
     """
     Represents an ``<input type="time">``.
     """
-    widget = widgets.TimeInput()
+    input_type = 'time'
 
 
 class DateTimeLocalField(core.DateTimeField):
     """
     Represents an ``<input type="datetime-local">``.
     """
-    widget = widgets.DateTimeLocalInput()
+    input_type = 'datetime-local'
 
 
 class IntegerField(core.IntegerField):
     """
     Represents an ``<input type="number">``.
     """
-    widget = widgets.NumberInput(step='1')
+    input_type = 'number'
+    field_attrs = {"step": "1"}
 
 
 class DecimalField(core.DecimalField):
     """
     Represents an ``<input type="number">``.
     """
-    widget = widgets.NumberInput(step='any')
+    input_type = 'number'
+    field_attrs = {"step": "any"}
 
 
 class IntegerRangeField(core.IntegerField):

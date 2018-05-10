@@ -1,8 +1,8 @@
 from __future__ import unicode_literals
 
 from unittest import TestCase
-from wtforms import form, StringField, validators
-from wtforms.i18n import get_translations
+from fastforms import form, StringField, validators
+from fastforms.i18n import get_translations
 
 
 def gettext_lower(self, s):
