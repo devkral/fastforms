@@ -20,7 +20,7 @@ class TestLocaleDecimal(TestCase):
         if locales is not unset_value:
             meta = {'locales': locales}
         form = self.F(meta=meta, a=Decimal(val))
-        self.assertEqual(form.a._value(), expected)
+        self.assertEqual(form.a.value(), expected)
 
     def test_typeerror(self):
         def build(**kw):

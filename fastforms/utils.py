@@ -1,6 +1,7 @@
 from attr import NOTHING
 from functools import update_wrapper
 
+NOTHING.__bool__ = staticmethod(lambda: False)
 unset_value = NOTHING
 
 class WebobInputWrapper(object):

@@ -11,10 +11,11 @@ class TextAreaField(StringField):
     This field represents an HTML ``<textarea>`` and can be used to take
     multi-line input.
     """
+    input_type = None
     def __str__(self):
         """ Just an example, use templates in real code and check for TextAreaField """
         attrs = self.field_attrs.copy()
-        return "<textarea {attrs}>{value}</textarea>".format(value=self._value(), attrs=attrs)
+        return "<textarea {attrs}>{value}</textarea>".format(value=self.value(), attrs=attrs)
 
 
 class PasswordField(StringField):
@@ -38,9 +39,8 @@ class FileField(Field):
 
     input_type = 'file'
 
-    def _value(self):
-        # browser ignores value of file input for security
-        return False
+    # browser ignores value of file input for security
+    value = None
 
 
 class MultipleFileField(FileField):
@@ -70,3 +70,7 @@ class SubmitField(BooleanField):
     submit button has been pressed.
     """
     input_type = 'submit'
+    def __init__(self, *, label="", **kwargs):
+        # will be copied
+        self.value = label
+        super(SubmitField, self).__init__(label="", **kwargs)

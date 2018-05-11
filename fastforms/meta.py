@@ -1,5 +1,5 @@
-from wtforms.utils import WebobInputWrapper
-from wtforms import i18n
+from fastforms.utils import WebobInputWrapper
+from fastforms import i18n
 
 
 class DefaultMeta(object):

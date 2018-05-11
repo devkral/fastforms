@@ -30,8 +30,8 @@ class MockMultiDict(object):
 
 
 class SneakyField(Field):
-    def __init__(self, sneaky_callable, *args, **kwargs):
-        super(SneakyField, self).__init__(*args, **kwargs)
+    def __init__(self, sneaky_callable, **kwargs):
+        super(SneakyField, self).__init__(**kwargs)
         self.sneaky_callable = sneaky_callable
 
     def process(self, formdata, data=unset_value):
@@ -48,9 +48,9 @@ class WebobWrapperTest(TestCase):
 
     def test_automatic_wrapping(self):
         def _check(formdata):
-            self.assertInstance(formdata, WebobInputWrapper)
+            self.assertIsInstance(formdata, WebobInputWrapper)
 
-        form = BaseForm({'a': SneakyField(_check)})
+        form = BaseForm({'a': SneakyField(sneaky_callable=_check)})
         form.process(self.filled_mdict)
 
     def test_empty(self):

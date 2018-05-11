@@ -5,8 +5,10 @@ import decimal
 import html
 import itertools
 import attr as _attr
+from functools import reduce
 
 from copy import copy
+from collections import OrderedDict
 
 from fastforms.compat import text_type, izip
 from fastforms.i18n import DummyTranslations
@@ -20,19 +22,28 @@ __all__ = (
     'SelectMultipleField', 'StringField', 'TimeField', 'Option'
 )
 
+_escape_strings = str.maketrans({"'": "\\'", '"': '\\"'})
 
-class HtmlAttrDict(dict):
+class HtmlAttrDict(OrderedDict):
     """
         Holds a set of attributes.
 
     Accessing a non-existing attribute returns False for its value.
     """
+    __slots__ = []
+    value = None
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        try:
+            value = self.pop("value")
+        except KeyError:
+            pass
         if any(map(lambda key: not key.isidentifier(), self.keys())):
             raise ValueError("Invalid key name: %s" % key)
 
     def __setitem__(self, key, value):
+        if key == "value":
+            return super().__setattr__(key, value)
         if not key.isidentifier():
             raise ValueError("Invalid key name: %s" % key)
         if isinstance(value, bool) and not value:
@@ -41,35 +52,74 @@ class HtmlAttrDict(dict):
             except KeyError:
                 pass
         else:
-            super().__setitem__(key, value)
+            if isinstance(value, bool):
+                super().__setitem__(key, key)
+            else:
+                super().__setitem__(key, str(value).translate(_escape_strings))
 
     def __getattr__(self, key):
-        return self[key]
+        try:
+            return self[key]
+        except KeyError:
+            return False
 
     def __setattr__(self, key, value):
+        if key == "value":
+            if callable(value):
+                _value = lambda :value().translate(_escape_strings)
+            elif value:
+                _value = str(value).translate(_escape_strings)
+            else:
+                _value = None
+
+            super().__setattr__(key, _value)
+            return
         self[key] = value
 
-    @staticmethod
-    def format_attr(item):
-        key, value = item
-        if isinstance(value, bool):
-            if value:
-                return '{}="{}"'.format(key, key)
-            else:
-                return ''
-        else:
-            return '{}="{}"'.format(key, html.escape(value))
+    def __iter__(self):
+        return self.items()
 
     def __str__(self):
         """ return safe html string """
-        return " ".join(map(self.format_attr, self.items()))
+        return " ".join(map(lambda x: '{}="{}"'.format(*x), self.items()))
+
+    def __unicode__(self):
+        return self.__str__()
 
     def __html__(self):
         return self.__str__()
 
     def __repr__(self):
-        flags = (name for name in self)
-        return '<wtforms.fields.HtmlAttrDict: {%s}>' % ', '.join(flags)
+        return '<wtforms.fields.HtmlAttrDict: {%s}>' % ', '.join(self.keys())
+
+    def update(self, other):
+        super().update(other)
+        try:
+            self.value = self.pop("value")
+        except KeyError:
+            pass
+        if any(map(lambda key: not key.isidentifier(), self.keys())):
+            raise ValueError("Invalid key name: %s" % key)
+
+    def items(self):
+        value = self.value
+        if callable(value):
+            value = self.value()
+        if value is None:
+            return itertools.chain(super().items())
+        else:
+            return itertools.chain(super().items(), [("value", value)])
+
+    def keys(self):
+        if self.value:
+            return itertools.chain(super().keys(), ["value"])
+        else:
+            return itertools.chain(super().keys())
+
+    def values(self):
+        raise NotImplemented
+
+
 
 @_attr.s(slots=True)
 class Label(object):
@@ -87,6 +137,9 @@ class Label(object):
         """ Basis definition, use your template system to customize (see examples) """
         return """<label for="{field_id}">{text}</label>""".format(field_id=self.field_id, text=self.html_safe)
 
+    def __unicode__(self):
+        return self.__str__()
+
     def __html__(self):
         return self.__str__()
 
@@ -101,6 +154,9 @@ class Description(object):
     def __str__(self):
         """ Basis definition, use your template system to customize (see examples) """
         return self.html_safe
+
+    def __unicode__(self):
+        return self.__str__()
 
     def __html__(self):
         return self.__str__()
@@ -146,15 +202,14 @@ class BaseField(object):
     a name to construct the field.
     """
 
-    errors = _attr.ib(default=_attr.Factory(list))
+    errors = tuple()
     process_errors = _attr.ib(default=_attr.Factory(list))
     raw_data = None
-    data = _attr.ib(default=None, init=False)
+    data = None
     validators = _attr.ib(default=_attr.Factory(list))
     label = _attr.ib(default=None, init=False)
     filters = _attr.ib(default=_attr.Factory(list))
     description = _attr.ib(default="")
-    id = _attr.ib(default="")
     default = _attr.ib(default=None)
     type = _attr.ib(default="", init=False)
     short_name = _attr.ib(default="", init=False)
@@ -221,10 +276,8 @@ class Field(BaseField):
         if _translations is not None:
             self._translations = _translations
 
+        # replace dict field_attrs by HtmlAttrDict
         self.field_attrs = HtmlAttrDict(self.field_attrs)
-        if field_attrs:
-            self.field_attrs.update(field_attrs)
-
 
         if _meta is not None:
             self.meta = _meta
@@ -234,23 +287,25 @@ class Field(BaseField):
             raise TypeError("Must provide one of _form or _meta")
 
         self.description = Description(text=self.description)
+        # input order important
+        self.field_attrs["id"] = id or _prefix + _name
+        self.field_attrs["name"] = _prefix + _name
         if self.input_type:
             self.field_attrs["type"] = self.input_type
-        self.field_attrs["name"] = _prefix + _name
-        self.field_attrs["id"] = id or self.field_attrs.name
+        if field_attrs:
+            self.field_attrs.update(field_attrs)
+        self.field_attrs.value = self.value
         self.short_name = _name
 
         if label is None:
             label = self.gettext(_name.replace('_', ' ').title())
-        self.label = Label(field_id=self.id, text=label)
+        self.label = Label(field_id=self.field_attrs.id, text=label)
 
     def __str__(self):
         """
         Returns a basis HTML representation of the field. for more powerful rendering use templates
         """
-        attrs = self.field_attrs.copy()
-        attrs["value"] = self._value()
-        return "<input {attrs}></input>".format(attrs=attrs)
+        return "<input {attrs}/>".format(attrs=self.field_attrs)
 
     def __unicode__(self):
         """
@@ -264,7 +319,11 @@ class Field(BaseField):
         Returns a HTML representation of the field. For more powerful rendering,
         see the :meth:`__call__` method.
         """
-        return self()
+        return self.__str__()
+
+
+    def value(self):
+        return text_type(self.data) if self.data is not None else ''
 
     def gettext(self, string):
         """
@@ -432,15 +491,23 @@ class Field(BaseField):
         if valuelist:
             self.data = valuelist[0]
 
+    def populate_obj(self, obj, name):
+        """
+        Populates `obj.<name>` with the field's data.
+
+        :note: This is a destructive operation. If `obj.<name>` already exists,
+               it will be overridden. Use with caution.
+        """
+        setattr(obj, name, self.data)
+
 
 class UnboundField(object):
     _formfield = True
     creation_counter = 0
 
-    def __init__(self, field_class, *args, **kwargs):
+    def __init__(self, field_class, **kwargs):
         UnboundField.creation_counter += 1
         self.field_class = field_class
-        self.args = args
         self.kwargs = kwargs
         self.creation_counter = UnboundField.creation_counter
 
@@ -453,10 +520,10 @@ class UnboundField(object):
             _translations=translations,
             **kwargs
         )
-        return self.field_class(*self.args, **kw)
+        return self.field_class(**kw)
 
     def __repr__(self):
-        return '<UnboundField(%s, %r, %r)>' % (self.field_class.__name__, self.args, self.kwargs)
+        return '<UnboundField(%s, %r)>' % (self.field_class.__name__, self.kwargs)
 
 
 @_attr.s(init=False)
@@ -494,7 +561,7 @@ class SelectField(Field):
     Fields which can be iterated to produce options.
     """
 
-    def __init__(self, *, coerce=text_type, choices=None, **kwargs):
+    def __init__(self, *, coerce=text_type, choices=tuple(), **kwargs):
         super(SelectField, self).__init__(**kwargs)
         self.coerce = coerce
         self.choices = copy(choices)
@@ -524,12 +591,12 @@ class SelectField(Field):
             raise ValueError(self.gettext('Not a valid choice'))
 
     def __str__(self):
-        return "<select {attrs}>{choices}</select>".format(attrs=self.field_attrs, choices="".join(iter(self)))
+        return "<select {attrs}>{choices}</select>".format(attrs=self.field_attrs, choices=reduce(lambda x,y: "{}{}".format(x, y), self))
 
     def __iter__(self):
         opts = dict(_name=self.field_attrs.name, _form=None, _meta=self.meta)
-        for i, (value, label, checked) in enumerate(self.iter_choices()):
-            opt = Option(checked=checked, label=label, id='%s-%d' % (self.id, i))
+        for i, (value, label, selected) in enumerate(self.iter_choices()):
+            opt = Option(selected=selected, label=label, id='%s-%d' % (self.field_attrs.id, i))
             yield opt
 
 class SelectMultipleField(SelectField):
@@ -572,6 +639,12 @@ class RadioField(SelectField):
         """ example render """
         return "".join(map(lambda x: self.format_choice(x), iter(self)))
 
+    def __iter__(self):
+        opts = dict(_name=self.field_attrs.name, _form=None, _meta=self.meta)
+        for i, (value, label, selected) in enumerate(self.iter_choices()):
+            opt = Option(checked=selected, label=label, id='%s-%d' % (self.field_attrs.id, i))
+            yield opt
+
 
 class StringField(Field):
     """
@@ -587,9 +660,6 @@ class StringField(Field):
         else:
             self.data = ''
 
-    def _value(self):
-        return text_type(self.data) if self.data is not None else ''
-
 
 class LocaleAwareNumberField(Field):
     """
@@ -598,8 +668,8 @@ class LocaleAwareNumberField(Field):
     Locale-aware numbers require the 'babel' package to be present.
     """
 
-    def __init__(self, label=None, validators=None, use_locale=False, number_format=None, **kwargs):
-        super(LocaleAwareNumberField, self).__init__(label, validators, **kwargs)
+    def __init__(self, *, use_locale=False, number_format=None, **kwargs):
+        super(LocaleAwareNumberField, self).__init__(**kwargs)
         self.use_locale = use_locale
         if use_locale:
             self.number_format = number_format
@@ -628,10 +698,7 @@ class IntegerField(Field):
 
     input_type = "text"
 
-    def __init__(self, label=None, validators=None, **kwargs):
-        super(IntegerField, self).__init__(label, validators, **kwargs)
-
-    def _value(self):
+    def value(self):
         if self.raw_data:
             return self.raw_data[0]
         elif self.data is not None:
@@ -669,8 +736,8 @@ class DecimalField(LocaleAwareNumberField):
 
     input_type = "text"
 
-    def __init__(self, label=None, validators=None, places=unset_value, rounding=None, **kwargs):
-        super(DecimalField, self).__init__(label, validators, **kwargs)
+    def __init__(self, *, places=unset_value, rounding=None, **kwargs):
+        super(DecimalField, self).__init__(**kwargs)
         if self.use_locale and (places is not unset_value or rounding is not None):
             raise TypeError("When using locale-aware numbers, 'places' and 'rounding' are ignored.")
 
@@ -679,7 +746,7 @@ class DecimalField(LocaleAwareNumberField):
         self.places = places
         self.rounding = rounding
 
-    def _value(self):
+    def value(self):
         if self.raw_data:
             return self.raw_data[0]
         elif self.data is not None:
@@ -722,10 +789,7 @@ class FloatField(Field):
     """
     input_type = "text"
 
-    def __init__(self, label=None, validators=None, **kwargs):
-        super(FloatField, self).__init__(label, validators, **kwargs)
-
-    def _value(self):
+    def value(self):
         if self.raw_data:
             return self.raw_data[0]
         elif self.data is not None:
@@ -756,8 +820,8 @@ class BooleanField(Field):
     false_values = (False, 'false', '')
     input_type = "checkbox"
 
-    def __init__(self, label=None, validators=None, false_values=None, **kwargs):
-        super(BooleanField, self).__init__(label, validators, **kwargs)
+    def __init__(self, false_values=None, **kwargs):
+        super(BooleanField, self).__init__(**kwargs)
         if false_values is not None:
             self.false_values = false_values
 
@@ -770,7 +834,7 @@ class BooleanField(Field):
         else:
             self.data = True
 
-    def _value(self):
+    def value(self):
         if self.raw_data:
             return text_type(self.raw_data[0])
         else:
@@ -782,11 +846,11 @@ class DateTimeField(Field):
     A text field which stores a `datetime.datetime` matching a format.
     """
 
-    def __init__(self, label=None, validators=None, format='%Y-%m-%d %H:%M:%S', **kwargs):
-        super(DateTimeField, self).__init__(label, validators, **kwargs)
+    def __init__(self, *, format='%Y-%m-%d %H:%M:%S', **kwargs):
+        super(DateTimeField, self).__init__(**kwargs)
         self.format = format
 
-    def _value(self):
+    def value(self):
         if self.raw_data:
             return ' '.join(self.raw_data)
         else:
@@ -806,8 +870,8 @@ class DateField(DateTimeField):
     """
     Same as DateTimeField, except stores a `datetime.date`.
     """
-    def __init__(self, label=None, validators=None, format='%Y-%m-%d', **kwargs):
-        super(DateField, self).__init__(label, validators, format, **kwargs)
+    def __init__(self, format='%Y-%m-%d', **kwargs):
+        super(DateField, self).__init__(format=format, **kwargs)
 
     def process_formdata(self, valuelist):
         if valuelist:
@@ -823,8 +887,8 @@ class TimeField(DateTimeField):
     """
     Same as DateTimeField, except stores a `time`.
     """
-    def __init__(self, label=None, validators=None, format='%H:%M', **kwargs):
-        super(TimeField, self).__init__(label, validators, format, **kwargs)
+    def __init__(self, format='%H:%M', **kwargs):
+        super(TimeField, self).__init__(format=format, **kwargs)
 
     def process_formdata(self, valuelist):
         if valuelist:
@@ -846,15 +910,15 @@ class FormField(Field):
         A string which will be suffixed to this field's name to create the
         prefix to enclosed fields. The default is fine for most uses.
     """
+    _obj = None
 
     def __init__(self, form_class, *, separator='-', **kwargs):
-        super(FormField, self).__init__(label, validators, **kwargs)
+        super(FormField, self).__init__(**kwargs)
         self.form_class = form_class
         self.separator = separator
-        self._obj = None
         if self.filters:
             raise TypeError('FormField cannot take filters, as the encapsulated data is not mutable.')
-        if validators:
+        if self.validators:
             raise TypeError('FormField does not accept any validators. Instead, define them on the enclosed form.')
 
     def process(self, formdata, data=unset_value):
@@ -867,7 +931,7 @@ class FormField(Field):
 
         self.object_data = data
 
-        prefix = self.name + self.separator
+        prefix = self.field_attrs.name + self.separator
         if isinstance(data, dict):
             self.form = self.form_class(formdata=formdata, prefix=prefix, **data)
         else:
@@ -925,9 +989,9 @@ class FieldList(Field):
         formdata.
     """
 
-    def __init__(self, unbound_field, label=None, validators=None, min_entries=0,
+    def __init__(self, unbound_field, *, min_entries=0,
                  max_entries=None, default=tuple(), **kwargs):
-        super(FieldList, self).__init__(label, validators, default=default, **kwargs)
+        super(FieldList, self).__init__(default=default, **kwargs)
         if self.filters:
             raise TypeError('FieldList does not accept any filters. Instead, define them on the enclosed field.')
         assert isinstance(unbound_field, UnboundField), 'Field must be unbound, not a field class'
@@ -1026,7 +1090,7 @@ class FieldList(Field):
             index = self.last_index + 1
         self.last_index = index
         name = '%s-%d' % (self.short_name, index)
-        id = '%s-%d' % (self.id, index)
+        id = '%s-%d' % (self.field_attrs.id, index)
         field = self.unbound_field.bind(form=None, name=name, prefix=self._prefix, id=id, _meta=self.meta,
                                         translations=self._translations)
         field.process(formdata, data)

@@ -69,13 +69,13 @@ class BaseFormTest(TestCase):
 
     def test_prefixes(self):
         form = self.get_form(prefix='foo')
-        self.assertEqual(form['test'].name, 'foo-test')
+        self.assertEqual(form['test'].field_attrs.name, 'foo-test')
         self.assertEqual(form['test'].short_name, 'test')
-        self.assertEqual(form['test'].id, 'foo-test')
+        self.assertEqual(form['test'].field_attrs.id, 'foo-test')
         form = self.get_form(prefix='foo.')
         form.process(DummyPostData({'foo.test': ['hello'], 'test': ['bye']}))
         self.assertEqual(form['test'].data, 'hello')
-        self.assertEqual(self.get_form(prefix='foo[')['test'].name, 'foo[-test')
+        self.assertEqual(self.get_form(prefix='foo[')['test'].field_attrs.name, 'foo[-test')
 
     def test_formdata_wrapper_error(self):
         form = self.get_form()
@@ -184,17 +184,17 @@ class FormTest(TestCase):
             banana = StringField()
             kiwi = StringField()
 
-        self.assertEqual([x.name for x in MyForm()], ['strawberry', 'banana', 'kiwi'])
+        self.assertEqual([x.field_attrs.name for x in MyForm()], ['strawberry', 'banana', 'kiwi'])
         MyForm.apple = StringField()
-        self.assertEqual([x.name for x in MyForm()], ['strawberry', 'banana', 'kiwi', 'apple'])
+        self.assertEqual([x.field_attrs.name for x in MyForm()], ['strawberry', 'banana', 'kiwi', 'apple'])
         del MyForm.banana
-        self.assertEqual([x.name for x in MyForm()], ['strawberry', 'kiwi', 'apple'])
+        self.assertEqual([x.field_attrs.name for x in MyForm()], ['strawberry', 'kiwi', 'apple'])
         MyForm.strawberry = StringField()
-        self.assertEqual([x.name for x in MyForm()], ['kiwi', 'apple', 'strawberry'])
+        self.assertEqual([x.field_attrs.name for x in MyForm()], ['kiwi', 'apple', 'strawberry'])
         # Ensure sort is stable: two fields with the same creation counter
         # should be subsequently sorted by name.
         MyForm.cherry = MyForm.kiwi
-        self.assertEqual([x.name for x in MyForm()], ['cherry', 'kiwi', 'apple', 'strawberry'])
+        self.assertEqual([x.field_attrs.name for x in MyForm()], ['cherry', 'kiwi', 'apple', 'strawberry'])
 
     def test_data_arg(self):
         data = {'test': 'foo'}

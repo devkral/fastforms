@@ -191,7 +191,7 @@ class FormMeta(type):
                 if 'Meta' in mro_class.__dict__:
                     bases.append(mro_class.Meta)
             cls._wtforms_meta = type('Meta', tuple(bases), {})
-        return type.__call__(cls, *args, **kwargs)
+        return type.__call__(cls, **kwargs)
 
     def __setattr__(cls, name, value):
         """
@@ -201,6 +201,8 @@ class FormMeta(type):
             cls._wtforms_meta = None
         elif not name.startswith('_') and hasattr(value, '_formfield'):
             cls._unbound_fields = None
+        #if issubclass(value, BaseField):
+        #    value = _attr.ib(default=value, init=False)
         type.__setattr__(cls, name, value)
 
     def __delattr__(cls, name):
