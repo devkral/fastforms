@@ -48,7 +48,7 @@ class WebobWrapperTest(TestCase):
 
     def test_automatic_wrapping(self):
         def _check(formdata):
-            self.assertTrue(isinstance(formdata, WebobInputWrapper))
+            self.assertInstance(formdata, WebobInputWrapper)
 
         form = BaseForm({'a': SneakyField(_check)})
         form.process(self.filled_mdict)

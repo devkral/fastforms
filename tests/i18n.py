@@ -127,7 +127,7 @@ class TranslationsTest(TestCase):
             def get_translations(self, form):
                 return Lower_Translator()
 
-        a = StringField('', [validators.Length(max=5)])
+        a = StringField(label='', validators=[validators.Length(max=5)])
 
     def setUp(self):
         self.a = self.F().a

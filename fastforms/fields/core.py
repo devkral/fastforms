@@ -78,14 +78,14 @@ class Label(object):
     """
     field_id = _attr.ib()
     text = _attr.ib(default="")
-    text_safe = _attr.ib(init=False)
 
-    def __attrs_post_init__(self):
-        self.text_safe = html.escape(self.text, quote=False)
+    @property
+    def html_safe(self):
+        return html.escape(self.text, quote=False)
 
     def __str__(self):
         """ Basis definition, use your template system to customize (see examples) """
-        return """<label for="{field_id}">{text}</label>""".format(field_id=self.field_id, text=self.text_safe)
+        return """<label for="{field_id}">{text}</label>""".format(field_id=self.field_id, text=self.html_safe)
 
     def __html__(self):
         return self.__str__()
@@ -93,19 +93,20 @@ class Label(object):
 @_attr.s(slots=True)
 class Description(object):
     text = _attr.ib()
-    text_safe = _attr.ib(init=False)
 
-    def __attrs_post_init__(self):
-        self.text_safe = html.escape(self.text, quote=False)
+    @property
+    def html_safe(self):
+        return html.escape(self.text, quote=False)
 
     def __str__(self):
         """ Basis definition, use your template system to customize (see examples) """
-        return self.text_safe
+        return self.html_safe
 
     def __html__(self):
         return self.__str__()
 
-class Field(object):
+@_attr.s(slots=True, repr=False)
+class BaseField(object):
     """
     Field base class
 
@@ -145,32 +146,78 @@ class Field(object):
     a name to construct the field.
     """
 
-    errors = tuple()
-    process_errors = tuple()
+    errors = _attr.ib(default=_attr.Factory(list))
+    process_errors = _attr.ib(default=_attr.Factory(list))
     raw_data = None
-    data = None
-    validators = tuple()
-    label = None
-    filters = tuple()
-    description = ""
-    id = ""
-    default = None
+    data = _attr.ib(default=None, init=False)
+    validators = _attr.ib(default=_attr.Factory(list))
+    label = _attr.ib(default=None, init=False)
+    filters = _attr.ib(default=_attr.Factory(list))
+    description = _attr.ib(default="")
+    id = _attr.ib(default="")
+    default = _attr.ib(default=None)
+    type = _attr.ib(default="", init=False)
+    short_name = _attr.ib(default="", init=False)
+
+
+
+class Field(BaseField):
+    """
+    Field base class
+
+    :param label:
+        The label of the field.
+    :param validators:
+        A sequence of validators to call when `validate` is called.
+    :param filters:
+        A sequence of filters which are run on input data by `process`.
+    :param description:
+        A description for the field, typically used for help text.
+    :param id:
+        An id to use for the field. A reasonable default is set by the form,
+        and you shouldn't need to set this manually.
+    :param default:
+        The default value to assign to the field, if no form or object
+        input is provided. May be a callable.
+    :param _form:
+        The form holding this field. It is passed by the form itself during
+        construction. You should never pass this value yourself.
+    :param _name:
+        The name of this field, passed by the enclosing form during its
+        construction. You should never pass this value yourself.
+    :param _prefix:
+        The prefix to prepend to the form name of this field, passed by
+        the enclosing form during construction.
+    :param _translations:
+        A translations object providing message translations. Usually
+        passed by the enclosing form during construction. See
+        :doc:`I18n docs <i18n>` for information on message translations.
+    :param _meta:
+        If provided, this is the 'meta' instance from the form. You usually
+        don't pass this yourself.
+
+    If `_form` and `_name` isn't provided, an :class:`UnboundField` will be
+    returned instead. Call its :func:`bind` method with a form instance and
+    a name to construct the field.
+    """
+
     field_attrs = {} #replaced by HtmlAttrDict
     input_type = None
+    meta = None
     _translations = DummyTranslations()
 
     _formfield = True
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, **kwargs):
         if '_form' in kwargs and '_name' in kwargs:
             return super(Field, cls).__new__(cls)
         else:
-            return UnboundField(cls, *args, **kwargs)
+            return UnboundField(cls, **kwargs)
 
-    def __init__(self, label=None, validators=tuple(), filters=tuple(),
-                 description='', id=None, default=None, field_attrs=None,*,
+    def __init__(self, *, label=None, id=None, field_attrs=None,
                  _form=None, _name=None, _prefix='',
-                 _translations=None, _meta=None):
+                 _translations=None, _meta=None, **kwargs):
+        super().__init__(**kwargs)
         if _translations is not None:
             self._translations = _translations
 
@@ -186,17 +233,13 @@ class Field(object):
         else:
             raise TypeError("Must provide one of _form or _meta")
 
-        self.default = default
-        self.description = Description(text=description)
-        self.filters = filters
+        self.description = Description(text=self.description)
         if self.input_type:
             self.field_attrs["type"] = self.input_type
         self.field_attrs["name"] = _prefix + _name
-        self.short_name = _name
-        self.type = type(self).__name__
-        self.validators = list(validators) if validators else []
-
         self.field_attrs["id"] = id or self.field_attrs.name
+        self.short_name = _name
+
         if label is None:
             label = self.gettext(_name.replace('_', ' ').title())
         self.label = Label(field_id=self.id, text=label)
@@ -451,8 +494,8 @@ class SelectField(Field):
     Fields which can be iterated to produce options.
     """
 
-    def __init__(self, *args, coerce=text_type, choices=None, **kwargs):
-        super(SelectField, self).__init__(*args, **kwargs)
+    def __init__(self, *, coerce=text_type, choices=None, **kwargs):
+        super(SelectField, self).__init__(**kwargs)
         self.coerce = coerce
         self.choices = copy(choices)
 
@@ -484,7 +527,7 @@ class SelectField(Field):
         return "<select {attrs}>{choices}</select>".format(attrs=self.field_attrs, choices="".join(iter(self)))
 
     def __iter__(self):
-        opts = dict(_name=self.name, _form=None, _meta=self.meta)
+        opts = dict(_name=self.field_attrs.name, _form=None, _meta=self.meta)
         for i, (value, label, checked) in enumerate(self.iter_choices()):
             opt = Option(checked=checked, label=label, id='%s-%d' % (self.id, i))
             yield opt
@@ -804,7 +847,7 @@ class FormField(Field):
         prefix to enclosed fields. The default is fine for most uses.
     """
 
-    def __init__(self, form_class, label=None, validators=None, separator='-', **kwargs):
+    def __init__(self, form_class, *, separator='-', **kwargs):
         super(FormField, self).__init__(label, validators, **kwargs)
         self.form_class = form_class
         self.separator = separator
@@ -905,7 +948,7 @@ class FieldList(Field):
         self.object_data = data
 
         if formdata:
-            indices = sorted(set(self._extract_indices(self.name, formdata)))
+            indices = sorted(set(self._extract_indices(self.field_attrs.name, formdata)))
             if self.max_entries:
                 indices = indices[:self.max_entries]
 

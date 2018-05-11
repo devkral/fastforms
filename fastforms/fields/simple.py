@@ -14,8 +14,7 @@ class TextAreaField(StringField):
     def __str__(self):
         """ Just an example, use templates in real code and check for TextAreaField """
         attrs = self.field_attrs.copy()
-        value = attrs.pop("value")
-        return "<textarea {attrs}>{value}</textarea>".format(value=value, attrs=attrs)
+        return "<textarea {attrs}>{value}</textarea>".format(value=self._value(), attrs=attrs)
 
 
 class PasswordField(StringField):

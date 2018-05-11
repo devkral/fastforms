@@ -642,10 +642,10 @@ class DateTimeFieldTest(TestCase):
 
 class SubmitFieldTest(TestCase):
     class F(Form):
-        a = SubmitField('Label')
+        a = SubmitField(label='Label')
 
     def test(self):
-        self.assertEqual(self.F().a(), """<input id="a" name="a" type="submit" value="Label">""")
+        self.assertEqual(str(self.F().a), """<input id="a" name="a" type="submit" value="Label">""")
 
 
 class FormFieldTest(TestCase):
